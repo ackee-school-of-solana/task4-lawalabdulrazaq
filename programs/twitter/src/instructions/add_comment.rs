@@ -12,6 +12,11 @@ pub fn add_comment(ctx: Context<AddCommentContext>, comment_content: String) -> 
     // stored inside Comment Account. The bytearray can contain maximum of 500 bytes.
 
     // HINT: Check out how the length check is performed within initialize_tweet function.
+
+    require!(
+        comment_content.as_bytes().len() <= COMMENT_LENGTH,
+        TwitterError::CommentTooLong
+    );
     // -------------------------------------------------------------------------------------------
 
     // TODO: Once we are sure that the length is correct, we have to copy contents of the comment_content
@@ -20,14 +25,22 @@ pub fn add_comment(ctx: Context<AddCommentContext>, comment_content: String) -> 
     // HINT: Take a look at how we copy the strings within the initialize_tweet function.
     // -------------------------------------------------------------------------------------------
 
+    let mut content_data = [0u8; COMMENT_LENGTH];
+    content_data[..comment_content.as_bytes().len()].copy_from_slice(comment_content.as_bytes());
+    comment.content = content_data;
+
     // TODO: Lastly, we want to setup all other Comment variables, check out Comment struct inside states.rs.
 
     // HINT:
     // - comment_author
+    comment.comment_author = ctx.accounts.comment_author.key();
     // - parent_tweet
+    comment.parent_tweet = ctx.accounts.tweet.key();
     // - content_length
+    // comment.content_length = comment_content.as_bytes().len() as u16;
     // - bump (check initialize_tweet for reference)
 
+    comment.content_length = comment_content.len() as u16;
     comment.bump = ctx.bumps.comment;
     // -------------------------------------------------------------------------------------------
 
@@ -62,7 +75,16 @@ pub struct AddCommentContext<'info> {
     //                  tweet.tweet_author.key().as_ref()
     // - lastly, check the correctness of bump using: bump = tweet.bump
     // -------------------------------------------------------------------------------------------
-    #[account()]
+    #[account(
+        mut,
+        seeds = [
+            tweet.topic[..tweet.topic_length as usize].as_ref(),
+            TWEET_SEED.as_bytes(),
+            tweet.tweet_author.key().as_ref()
+        ],
+        bump = tweet.bump
+    )]
     pub tweet: Account<'info, Tweet>,
+
     pub system_program: Program<'info, System>,
 }
