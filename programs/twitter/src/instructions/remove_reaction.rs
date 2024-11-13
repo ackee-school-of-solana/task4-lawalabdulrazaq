@@ -1,48 +1,64 @@
-use anchor_lang::prelude::*;
-
 use crate::errors::TwitterError;
 use crate::states::*;
+use anchor_lang::prelude::*;
 
 pub fn remove_reaction(ctx: Context<RemoveReactionContext>) -> Result<()> {
     let tweet = &mut ctx.accounts.tweet;
     let tweet_reaction = &ctx.accounts.tweet_reaction;
 
     // -------------------------------------------------------------------------------------------
-    // TODO: We can see that unlike the add_reaction function, the remove_reaction function does
-    // not include reaction type within its input parameters. The reaction type is stored within
-    // the tweet_reaction Account. Check the type of reaction and modify the number of Likes/Dislikes
-    // within the Tweet Account accordingly. Return an error in case of over/underflow.
-
-    // HINT: tweet.likes = tweet.likes.checked_sub(1).ok_or(TwitterError::MinLikesReached)?
-
+    // Check the reaction type (Like or Dislike) and subtract accordingly from tweet's like/dislike count
+    match tweet_reaction.reaction {
+        ReactionType::Like => {
+            // Ensure we don't subtract more than what is available
+            require!(tweet.likes > 0, TwitterError::MinLikesReached);
+            tweet.likes = tweet
+                .likes
+                .checked_sub(1)
+                .ok_or(TwitterError::MinLikesReached)?; // Ensures no underflow
+        }
+        ReactionType::Dislike => {
+            // Ensure we don't subtract more than what is available
+            require!(tweet.dislikes > 0, TwitterError::MinDislikesReached);
+            tweet.dislikes = tweet
+                .dislikes
+                .checked_sub(1)
+                .ok_or(TwitterError::MinDislikesReached)?; // Ensures no underflow
+        }
+    }
+    // Close the reaction account as it's removed
     // -------------------------------------------------------------------------------------------
+    // Close the tweet_reaction account and transfer any lamports to the reaction_author.
+    // This is done automatically by the close flag in the account macro.
 
     Ok(())
 }
+
 #[derive(Accounts)]
 pub struct RemoveReactionContext<'info> {
     #[account(mut)]
-    pub reaction_author: Signer<'info>,
+    pub reaction_author: Signer<'info>, // The reaction's author
+
     #[account(
         mut,
-        close=reaction_author,
-    // -------------------------------------------------------------------------------------------
-    // TODO: Fill the seeds for proper generating of PDA and don`t forget to check bump.
-
-    // HINT: Check how seeds are used within the AddReactionContext.
-    // -------------------------------------------------------------------------------------------
+        close=reaction_author,  // This ensures the tweet_reaction account is closed
+        seeds = [
+            TWEET_REACTION_SEED.as_bytes(),
+            reaction_author.key().as_ref(),
+            tweet.key().as_ref(),
+        ],
+        bump = tweet_reaction.bump
     )]
-    pub tweet_reaction: Account<'info, Reaction>,
-    // -------------------------------------------------------------------------------------------
-    // TODO: Fill the required account macro below.
+    pub tweet_reaction: Account<'info, Reaction>, // The reaction account being removed
 
-    // HINT:
-    // - account should be mutable
-    // - seeds are :    tweet.topic[..tweet.topic_length as usize].as_ref()
-    //                  TWEET_SEED.as_bytes(),
-    //                  tweet.tweet_author.key().as_ref()
-    // - lastly, check the correctness of bump using: bump = tweet.bump
-    // -------------------------------------------------------------------------------------------
-    #[account()]
-    pub tweet: Account<'info, Tweet>,
+    #[account(
+        mut,
+        seeds = [
+            tweet.topic[..tweet.topic_length as usize].as_ref(),
+            TWEET_SEED.as_bytes(),
+            tweet.tweet_author.key().as_ref(),
+        ],
+        bump = tweet.bump
+    )]
+    pub tweet: Account<'info, Tweet>, // The tweet being reacted to
 }
